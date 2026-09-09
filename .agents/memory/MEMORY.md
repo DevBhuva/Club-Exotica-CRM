@@ -1,0 +1,1 @@
+- [Clerk setup](clerk-setup.md) — protected web APIs use Replit-managed Clerk browser sessions plus server-side `getAuth` guards.

@@ -1,22 +1,24 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Club Exotica CRM API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
-    description: Health operations
+  - name: dashboard
+  - name: customers
+  - name: payments
+  - name: redemptions
+  - name: audit
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,13 +26,345 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /dashboard/summary:
+    get:
+      operationId: getDashboardSummary
+      tags: [dashboard]
+      summary: Get dashboard summary
+      responses:
+        "200":
+          description: Dashboard summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardSummary"
+  /customers:
+    get:
+      operationId: listCustomers
+      tags: [customers]
+      summary: Search and paginate customers
+      parameters:
+        - name: search
+          in: query
+          schema: { type: string }
+        - name: status
+          in: query
+          schema: { type: string }
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: pageSize
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 10 }
+      responses:
+        "200":
+          description: Paginated customer list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomerPage"
+    post:
+      operationId: createCustomer
+      tags: [customers]
+      summary: Create a submitted customer and membership
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CustomerInput"
+      responses:
+        "201":
+          description: Created customer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Customer"
+  /customers/{customerId}:
+    get:
+      operationId: getCustomer
+      tags: [customers]
+      summary: Get a customer profile
+      parameters:
+        - $ref: "#/components/parameters/CustomerId"
+      responses:
+        "200":
+          description: Customer profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomerProfile"
+        "404":
+          description: Customer not found
+    patch:
+      operationId: updateCustomer
+      tags: [customers]
+      summary: Update editable customer details
+      parameters:
+        - $ref: "#/components/parameters/CustomerId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CustomerUpdate"
+      responses:
+        "200":
+          description: Updated customer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Customer"
+  /customers/{customerId}/payments:
+    post:
+      operationId: createPayment
+      tags: [payments]
+      summary: Add an immutable payment transaction
+      parameters:
+        - $ref: "#/components/parameters/CustomerId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PaymentInput"
+      responses:
+        "201":
+          description: Created payment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Payment"
+  /customers/{customerId}/redemptions:
+    post:
+      operationId: createRedemption
+      tags: [redemptions]
+      summary: Redeem normal or offer nights
+      parameters:
+        - $ref: "#/components/parameters/CustomerId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RedemptionInput"
+      responses:
+        "201":
+          description: Created redemption
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Redemption"
+  /audit:
+    get:
+      operationId: listAuditLogs
+      tags: [audit]
+      summary: List recent audit activity
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        "200":
+          description: Audit log entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AuditLog"
 components:
+  parameters:
+    CustomerId:
+      name: customerId
+      in: path
+      required: true
+      schema: { type: string }
   schemas:
     HealthStatus:
       type: object
       properties:
-        status:
-          type: string
-      required:
-        - status
-
+        status: { type: string }
+      required: [status]
+    DashboardSummary:
+      type: object
+      required: [totalCustomers, activeMemberships, pendingMemberships, totalValue, totalCollected, outstanding, paymentsToday, normalNightsRedeemed, offerNightsRedeemed, hotelRedemptions, flightRedemptions]
+      properties:
+        totalCustomers: { type: integer }
+        activeMemberships: { type: integer }
+        pendingMemberships: { type: integer }
+        totalValue: { type: number }
+        totalCollected: { type: number }
+        outstanding: { type: number }
+        paymentsToday: { type: number }
+        normalNightsRedeemed: { type: integer }
+        offerNightsRedeemed: { type: integer }
+        hotelRedemptions: { type: integer }
+        flightRedemptions: { type: integer }
+    NightBalance:
+      type: object
+      required: [allocated, used, remaining]
+      properties:
+        allocated: { type: integer }
+        used: { type: integer }
+        remaining: { type: integer }
+    Customer:
+      type: object
+      required: [id, name, mobile, email, city, membershipId, product, membershipStatus, totalAmount, paid, due, normalNights, offerNights, createdAt]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        mobile: { type: string }
+        email: { type: string }
+        city: { type: string }
+        membershipId: { type: string }
+        afNumber: { type: ["string", "null"] }
+        product: { type: string }
+        membershipStatus: { type: string }
+        totalAmount: { type: number }
+        paid: { type: number }
+        due: { type: number }
+        normalNights: { $ref: "#/components/schemas/NightBalance" }
+        offerNights: { $ref: "#/components/schemas/NightBalance" }
+        createdAt: { type: string, format: date-time }
+    CustomerPage:
+      type: object
+      required: [items, page, pageSize, total]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Customer" }
+        page: { type: integer }
+        pageSize: { type: integer }
+        total: { type: integer }
+    FamilyMember:
+      type: object
+      required: [id, name, relation]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        relation: { type: string }
+        dateOfBirth: { type: ["string", "null"], format: date }
+    Nominee:
+      type: object
+      required: [id, name, relation, share]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        relation: { type: string }
+        share: { type: number }
+    CustomerProfile:
+      allOf:
+        - $ref: "#/components/schemas/Customer"
+        - type: object
+          required: [dateOfBirth, gender, relation, address, family, nominees, payments, redemptions]
+          properties:
+            dateOfBirth: { type: ["string", "null"], format: date }
+            gender: { type: ["string", "null"] }
+            relation: { type: ["string", "null"] }
+            address: { type: ["string", "null"] }
+            family:
+              type: array
+              items: { $ref: "#/components/schemas/FamilyMember" }
+            nominees:
+              type: array
+              items: { $ref: "#/components/schemas/Nominee" }
+            payments:
+              type: array
+              items: { $ref: "#/components/schemas/Payment" }
+            redemptions:
+              type: array
+              items: { $ref: "#/components/schemas/Redemption" }
+    CustomerInput:
+      type: object
+      required: [name, mobile, email, city, product, tenureYears, totalAmount, offerNights]
+      properties:
+        name: { type: string, minLength: 1 }
+        mobile: { type: string, minLength: 5 }
+        email: { type: string, format: email }
+        city: { type: string }
+        afNumber: { type: string }
+        dateOfBirth: { type: string, format: date }
+        gender: { type: string }
+        relation: { type: string }
+        address: { type: string }
+        product: { type: string }
+        tenureYears: { type: integer, minimum: 1, maximum: 50 }
+        totalAmount: { type: number, minimum: 0 }
+        offerNights: { type: integer, minimum: 0 }
+        initialPayment: { type: number, minimum: 0 }
+        paymentMethod: { type: string }
+    CustomerUpdate:
+      type: object
+      properties:
+        name: { type: string, minLength: 1 }
+        mobile: { type: string, minLength: 5 }
+        email: { type: string, format: email }
+        city: { type: string }
+        address: { type: string }
+        membershipStatus: { type: string }
+    Payment:
+      type: object
+      required: [id, receiptNumber, paymentDate, amount, previouslyPaid, totalPaid, remainingDue, method, createdBy]
+      properties:
+        id: { type: string }
+        receiptNumber: { type: string }
+        paymentDate: { type: string, format: date-time }
+        amount: { type: number }
+        previouslyPaid: { type: number }
+        totalPaid: { type: number }
+        remainingDue: { type: number }
+        method: { type: string }
+        reference: { type: ["string", "null"] }
+        createdBy: { type: string }
+    PaymentInput:
+      type: object
+      required: [amount, method]
+      properties:
+        amount: { type: number, exclusiveMinimum: 0 }
+        method: { type: string }
+        reference: { type: string }
+        remarks: { type: string }
+    Redemption:
+      type: object
+      required: [id, nightType, nights, travelType, status, createdAt]
+      properties:
+        id: { type: string }
+        nightType: { type: string }
+        nights: { type: integer }
+        travelType: { type: string }
+        status: { type: string }
+        hotelName: { type: ["string", "null"] }
+        city: { type: ["string", "null"] }
+        checkIn: { type: ["string", "null"], format: date }
+        checkOut: { type: ["string", "null"], format: date }
+        hotelNights: { type: ["integer", "null"] }
+        costPerNight: { type: ["number", "null"] }
+        totalHotelCost: { type: ["number", "null"] }
+        createdAt: { type: string, format: date-time }
+    RedemptionInput:
+      type: object
+      required: [nightType, nights, travelType]
+      properties:
+        nightType: { type: string }
+        nights: { type: integer, minimum: 1 }
+        travelType: { type: string }
+        hotelName: { type: string }
+        city: { type: string }
+        checkIn: { type: string, format: date }
+        checkOut: { type: string, format: date }
+        costPerNight: { type: number, minimum: 0 }
+        adults: { type: integer, minimum: 0 }
+        kids: { type: integer, minimum: 0 }
+        roomNumber: { type: string }
+    AuditLog:
+      type: object
+      required: [id, action, module, recordId, userName, timestamp]
+      properties:
+        id: { type: string }
+        action: { type: string }
+        module: { type: string }
+        recordId: { type: string }
+        userName: { type: string }
+        timestamp: { type: string, format: date-time }
+        detail: { type: string }

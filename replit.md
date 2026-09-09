@@ -1,6 +1,6 @@
-# [Project name]
+# Club Exotica CRM
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+Internal customer, membership, payment, and holiday redemption management for Club Exotica staff.
 
 ## Run & Operate
 
@@ -16,29 +16,37 @@ _Replace the heading above with the project's name, and this line with one sente
 - pnpm workspaces, Node.js 24, TypeScript 5.9
 - API: Express 5
 - DB: PostgreSQL + Drizzle ORM
+- Auth: Replit-managed Clerk with cookie-based browser sessions
 - Validation: Zod (`zod/v4`), `drizzle-zod`
 - API codegen: Orval (from OpenAPI spec)
 - Build: esbuild (CJS bundle)
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- `artifacts/club-exotica-crm` — responsive staff web app
+- `artifacts/api-server` — protected CRM API routes and Clerk proxy
+- `lib/db/src/schema/index.ts` — CRM relational schema
+- `lib/api-spec/openapi.yaml` — source-of-truth API contract
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- Customer, membership, payment, redemption, and audit records are relational PostgreSQL data; the browser is never the source of truth.
+- Payment and night usage are append-oriented ledgers; historical records are retained and current balances are derived.
+- Normal package nights and offer nights are stored and calculated separately.
+- Clerk owns browser sessions; the API rejects CRM requests without a Clerk session.
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+Dashboard, customer search and pagination, customer creation/editing, membership balance visibility, immutable payment entry, hotel/flight redemption entry, audit activity, reports, and responsive staff navigation.
 
 ## User preferences
 
-_Populate as you build — explicit user instructions worth remembering across sessions._
+No additional preferences recorded.
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+- CRM API routes require a signed-in Clerk browser session.
+- `pnpm --filter @workspace/club-exotica-crm run build` needs workflow-provided `PORT` and `BASE_PATH`; use the managed web workflow or the package typecheck locally.
 
 ## Pointers
 

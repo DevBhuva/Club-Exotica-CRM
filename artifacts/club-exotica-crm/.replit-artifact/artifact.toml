@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Club Exotica CRM"
+description = "An internal customer, membership, payment, and holiday redemption management system for Club Exotica staff."
+version = "1.0.0"
+id = "artifacts/club-exotica-crm"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 26010
+
+[services.development]
+run = "pnpm --filter @workspace/club-exotica-crm run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/club-exotica-crm", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/club-exotica-crm/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "26010"
+BASE_PATH = "/"
