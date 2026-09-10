@@ -291,9 +291,13 @@ function LandingPage() {
 
 function ProtectedApp() {
   const { isLoaded, isSignedIn } = useAuth();
-  const staff = useStaffProfile();
   if (!isLoaded) return <div className="grid min-h-[100dvh] place-items-center bg-[hsl(var(--background))] text-sm text-[hsl(var(--muted-foreground))]">Loading staff console...</div>;
   if (!isSignedIn) return <LandingPage />;
+  return <AuthenticatedConsole />;
+}
+
+function AuthenticatedConsole() {
+  const staff = useStaffProfile();
   return <Shell staff={staff.data}><ErrorBoundary resetKey={useLocation()[0]}><Switch><Route path="/" component={Dashboard} /><Route path="/customers" component={Customers} /><Route path="/customers/new" component={CustomerForm} /><Route path="/customers/:customerId" component={CustomerProfile} /><Route path="/reports" component={Reports} /><Route path="/settings/users" component={UserManagement} /><Route path="/settings" component={Settings} /><Route component={NotFound} /></Switch></ErrorBoundary></Shell>;
 }
 
