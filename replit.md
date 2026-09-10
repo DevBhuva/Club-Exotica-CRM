@@ -16,7 +16,7 @@ Internal customer, membership, payment, and holiday redemption management for Cl
 - pnpm workspaces, Node.js 24, TypeScript 5.9
 - API: Express 5
 - DB: PostgreSQL + Drizzle ORM
-- Auth: Replit-managed Clerk with cookie-based browser sessions
+- Auth: Replit-managed Clerk with cookie-based browser sessions, email/password-only app UI, and `SUPER_ADMIN` / `USER` public metadata roles
 - Validation: Zod (`zod/v4`), `drizzle-zod`
 - API codegen: Orval (from OpenAPI spec)
 - Build: esbuild (CJS bundle)
@@ -31,6 +31,7 @@ Internal customer, membership, payment, and holiday redemption management for Cl
 ## Architecture decisions
 
 - Customer, membership, payment, redemption, and audit records are relational PostgreSQL data; the browser is never the source of truth.
+- Staff identities and passwords are managed by Clerk; only a `SUPER_ADMIN` can create, update, or remove staff accounts through the CRM.
 - Payment and night usage are append-oriented ledgers; historical records are retained and current balances are derived.
 - Normal package nights and offer nights are stored and calculated separately.
 - Clerk owns browser sessions; the API rejects CRM requests without a Clerk session.

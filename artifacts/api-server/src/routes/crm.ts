@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { and, desc, eq, ilike, or, sql } from "drizzle-orm";
-import { getAuth } from "@clerk/express";
+import { clerkClient, getAuth } from "@clerk/express";
 import {
   CreateCustomerBody,
   CreatePaymentBody,
@@ -27,6 +27,161 @@ router.use((req, res, next) => {
     return;
   }
   next();
+});
+
+type StaffRole = "SUPER_ADMIN" | "USER";
+type StaffUser = Awaited<ReturnType<typeof clerkClient.users.getUser>>;
+
+function staffRole(user: StaffUser): StaffRole {
+  return (user.publicMetadata as { role?: string }).role === "SUPER_ADMIN"
+    ? "SUPER_ADMIN"
+    : "USER";
+}
+
+function staffEmail(user: StaffUser) {
+  return user.primaryEmailAddress?.emailAddress ?? user.emailAddresses[0]?.emailAddress ?? "";
+}
+
+function serializeStaffUser(user: StaffUser) {
+  return {
+    id: user.id,
+    email: staffEmail(user),
+    firstName: user.firstName ?? "",
+    lastName: user.lastName ?? "",
+    role: staffRole(user),
+    createdAt: new Date(user.createdAt).toISOString(),
+    lastSignInAt: user.lastSignInAt ? new Date(user.lastSignInAt).toISOString() : null,
+  };
+}
+
+async function currentStaffUser(req: Parameters<NonNullable<Parameters<typeof router.use>[1]>>[0]) {
+  const auth = getAuth(req);
+  return auth.userId ? clerkClient.users.getUser(auth.userId) : null;
+}
+
+async function requireSuperAdmin(req: Parameters<NonNullable<Parameters<typeof router.use>[1]>>[0], res: Parameters<NonNullable<Parameters<typeof router.use>[1]>>[1], next: Parameters<NonNullable<Parameters<typeof router.use>[1]>>[2]) {
+  try {
+    const user = await currentStaffUser(req);
+    if (!user || staffRole(user) !== "SUPER_ADMIN") {
+      res.status(403).json({ error: "Super admin access required" });
+      return;
+    }
+    res.locals.staffUser = user;
+    next();
+  } catch (error) {
+    req.log.error({ error }, "Failed to load staff authorization");
+    res.status(403).json({ error: "Unable to verify staff access" });
+  }
+}
+
+router.get("/staff/me", async (req, res) => {
+  try {
+    const user = await currentStaffUser(req);
+    if (!user) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+    res.json(serializeStaffUser(user));
+  } catch (error) {
+    req.log.error({ error }, "Failed to load staff profile");
+    res.status(500).json({ error: "Unable to load staff profile" });
+  }
+});
+
+router.get("/staff/users", requireSuperAdmin, async (req, res) => {
+  try {
+    const result = await clerkClient.users.getUserList({ limit: 100, orderBy: "-created_at" });
+    res.json(result.data.map(serializeStaffUser));
+  } catch (error) {
+    req.log.error({ error }, "Failed to list staff users");
+    res.status(500).json({ error: "Unable to list staff users" });
+  }
+});
+
+router.post("/staff/users", requireSuperAdmin, async (req, res) => {
+  try {
+    const { email, password, firstName = "", lastName = "", role = "USER" } = req.body as {
+      email?: string;
+      password?: string;
+      firstName?: string;
+      lastName?: string;
+      role?: StaffRole;
+    };
+    if (!email || !password || password.length < 8 || !["SUPER_ADMIN", "USER"].includes(role)) {
+      res.status(400).json({ error: "Email, password of at least 8 characters, and a valid role are required." });
+      return;
+    }
+    const user = await clerkClient.users.createUser({
+      emailAddress: [email.trim().toLowerCase()],
+      password,
+      firstName: firstName.trim() || undefined,
+      lastName: lastName.trim() || undefined,
+      publicMetadata: { role },
+    });
+    await addAudit("STAFF_USER_CREATED", "staff-users", user.id, `${email} created as ${role}`);
+    res.status(201).json(serializeStaffUser(user));
+  } catch (error) {
+    req.log.error({ error }, "Failed to create staff user");
+    res.status(400).json({ error: "Unable to create staff user. The email may already be in use." });
+  }
+});
+
+router.patch("/staff/users/:userId", requireSuperAdmin, async (req, res) => {
+  try {
+    const actor = res.locals.staffUser as StaffUser;
+    if (actor.id === req.params.userId) {
+      res.status(400).json({ error: "A super admin cannot change or remove their own account here." });
+      return;
+    }
+    const { email, password, firstName, lastName, role } = req.body as {
+      email?: string;
+      password?: string;
+      firstName?: string;
+      lastName?: string;
+      role?: StaffRole;
+    };
+    const userId = String(req.params.userId);
+    const existing = await clerkClient.users.getUser(userId);
+    const update: Parameters<typeof clerkClient.users.updateUser>[1] = {
+      firstName,
+      lastName,
+      password: password || undefined,
+      signOutOfOtherSessions: Boolean(password),
+      publicMetadata: role ? { role } : undefined,
+    };
+    if (email && email.trim().toLowerCase() !== staffEmail(existing).toLowerCase()) {
+      const createdEmail = await clerkClient.emailAddresses.createEmailAddress({
+        userId: existing.id,
+        emailAddress: email.trim().toLowerCase(),
+        verified: true,
+        primary: true,
+      });
+      update.primaryEmailAddressID = createdEmail.id;
+    }
+    const user = await clerkClient.users.updateUser(existing.id, update);
+    await addAudit("STAFF_USER_UPDATED", "staff-users", user.id, `${staffEmail(user)} credentials or role updated`);
+    res.json(serializeStaffUser(user));
+  } catch (error) {
+    req.log.error({ error }, "Failed to update staff user");
+    res.status(400).json({ error: "Unable to update staff user." });
+  }
+});
+
+router.delete("/staff/users/:userId", requireSuperAdmin, async (req, res) => {
+  try {
+    const actor = res.locals.staffUser as StaffUser;
+    if (actor.id === String(req.params.userId)) {
+      res.status(400).json({ error: "A super admin cannot remove their own account." });
+      return;
+    }
+    const user = await clerkClient.users.getUser(String(req.params.userId));
+    await clerkClient.users.deleteUser(user.id);
+    await addAudit("STAFF_USER_REMOVED", "staff-users", user.id, `${staffEmail(user)} removed`);
+    res.status(204).end();
+  } catch (error) {
+    req.log.error({ error }, "Failed to remove staff user");
+    res.status(400).json({ error: "Unable to remove staff user." });
+  }
 });
 
 const asNumber = (value: unknown) => Number(value ?? 0);

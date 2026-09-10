@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react';
-import { ClerkProvider, SignIn, SignUp, useAuth, useClerk } from '@clerk/react';
+import { useEffect, useMemo, useState } from 'react';
+import { ClerkProvider, useAuth, useClerk } from '@clerk/react';
+import { useSignIn } from '@clerk/react/legacy';
 import { publishableKeyFromHost } from '@clerk/react/internal';
 import { shadcn } from '@clerk/themes';
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
@@ -29,6 +30,20 @@ const clerkPubKey = publishableKeyFromHost(
   import.meta.env.VITE_CLERK_PUBLISHABLE_KEY,
 );
 const clerkProxyUrl = import.meta.env.VITE_CLERK_PROXY_URL;
+const apiPath = `${basePath}/api`;
+
+type StaffRole = 'SUPER_ADMIN' | 'USER';
+type StaffProfile = { id: string; email: string; firstName: string; lastName: string; role: StaffRole; createdAt: string; lastSignInAt: string | null };
+type StaffForm = { email: string; password: string; firstName: string; lastName: string; role: StaffRole };
+
+async function apiJson<T>(path: string, options?: RequestInit): Promise<T> {
+  const response = await fetch(`${apiPath}${path}`, { credentials: 'include', ...options, headers: { 'Content-Type': 'application/json', ...(options?.headers || {}) } });
+  if (!response.ok) {
+    const body = await response.json().catch(() => null) as { error?: string } | null;
+    throw new Error(body?.error || 'Request failed');
+  }
+  return response.status === 204 ? (undefined as T) : response.json() as Promise<T>;
+}
 
 const money = (value = 0) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(value);
 const shortDate = (value?: string | null) => value ? new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(value)) : '—';
@@ -85,10 +100,11 @@ const navItems = [
   { href: '/settings', label: 'Settings', icon: Settings2 },
 ];
 
-function Shell({ children }: { children: React.ReactNode }) {
+function Shell({ children, staff }: { children: React.ReactNode; staff: StaffProfile | null }) {
   const [location] = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
   const { signOut } = useClerk();
+  const visibleNavItems = staff?.role === 'SUPER_ADMIN' ? [...navItems, { href: '/settings/users', label: 'Staff users', icon: Users }] : navItems;
   return <div className="grain min-h-[100dvh] bg-[hsl(var(--background))] text-[hsl(var(--foreground))]">
     <aside className={`fixed inset-y-0 left-0 z-40 flex w-[246px] flex-col bg-[hsl(var(--sidebar))] px-4 py-5 text-[hsl(var(--sidebar-foreground))] transition-transform md:translate-x-0 ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}`}>
       <div className="mb-8 flex items-center justify-between px-2">
@@ -96,10 +112,10 @@ function Shell({ children }: { children: React.ReactNode }) {
         <button onClick={() => setMobileOpen(false)} className="rounded-lg p-1 text-[hsl(var(--sidebar-foreground)/.7)] md:hidden" data-testid="button-close-menu"><X size={18} /></button>
       </div>
       <div className="mb-3 px-3 font-mono-ui text-[9px] font-bold uppercase tracking-[.2em] text-[hsl(var(--sidebar-foreground)/.42)]">Workspace</div>
-      <nav className="grid gap-1">{navItems.map(({ href, label, icon: Icon }) => <Link key={href} href={href} onClick={() => setMobileOpen(false)} data-testid={`link-nav-${label.toLowerCase()}`} className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold ${location === href ? 'bg-[hsl(var(--sidebar-accent))] text-[hsl(var(--sidebar-foreground))]' : 'text-[hsl(var(--sidebar-foreground)/.66)] hover:bg-[hsl(var(--sidebar-accent)/.7)] hover:text-[hsl(var(--sidebar-foreground))]'}`}><Icon size={17} strokeWidth={location === href ? 2.4 : 1.8} /><span>{label}</span>{href === '/' && location === '/' ? <span className="ml-auto h-1.5 w-1.5 rounded-full bg-[hsl(var(--secondary))]" /> : null}</Link>)}</nav>
+       <nav className="grid gap-1">{visibleNavItems.map(({ href, label, icon: Icon }) => <Link key={href} href={href} onClick={() => setMobileOpen(false)} data-testid={`link-nav-${label.toLowerCase().replaceAll(' ', '-')}`} className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold ${location === href ? 'bg-[hsl(var(--sidebar-accent))] text-[hsl(var(--sidebar-foreground))]' : 'text-[hsl(var(--sidebar-foreground)/.66)] hover:bg-[hsl(var(--sidebar-accent)/.7)] hover:text-[hsl(var(--sidebar-foreground))]'}`}><Icon size={17} strokeWidth={location === href ? 2.4 : 1.8} /><span>{label}</span>{href === '/' && location === '/' ? <span className="ml-auto h-1.5 w-1.5 rounded-full bg-[hsl(var(--secondary))]" /> : null}</Link>)}</nav>
       <div className="mt-auto">
         <div className="mb-4 rounded-2xl border border-[hsl(var(--sidebar-border))] bg-[hsl(var(--sidebar-accent)/.55)] p-3.5"><div className="mb-3 flex items-center justify-between"><span className="font-mono-ui text-[9px] uppercase tracking-[.16em] text-[hsl(var(--sidebar-foreground)/.5)]">Collection pulse</span><span className="h-2 w-2 rounded-full bg-[#7ed5a0]" /></div><p className="font-display text-2xl">On track</p><p className="mt-1 text-[11px] leading-4 text-[hsl(var(--sidebar-foreground)/.5)]">Monthly collection rhythm is healthy.</p></div>
-        <div className="flex items-center gap-3 border-t border-[hsl(var(--sidebar-border))] px-2 pt-4"><div className="grid h-8 w-8 place-items-center rounded-full bg-[hsl(var(--secondary))] text-xs font-bold text-[hsl(var(--primary))]">AS</div><div className="min-w-0"><p className="truncate text-xs font-bold">Aarav Shah</p><p className="truncate text-[10px] text-[hsl(var(--sidebar-foreground)/.5)]">Operations desk</p></div><button className="ml-auto text-[hsl(var(--sidebar-foreground)/.45)]" onClick={() => void signOut({ redirectUrl: basePath || '/' })} data-testid="button-sign-out"><LogOut size={15} /></button></div>
+         <div className="flex items-center gap-3 border-t border-[hsl(var(--sidebar-border))] px-2 pt-4"><div className="grid h-8 w-8 place-items-center rounded-full bg-[hsl(var(--secondary))] text-xs font-bold text-[hsl(var(--primary))]">{initials(`${staff?.firstName} ${staff?.lastName}`)}</div><div className="min-w-0"><p className="truncate text-xs font-bold">{staff?.firstName || staff?.email || 'Staff user'}</p><p className="truncate text-[10px] text-[hsl(var(--sidebar-foreground)/.5)]">{staff?.role === 'SUPER_ADMIN' ? 'Super admin' : 'Staff user'}</p></div><button className="ml-auto text-[hsl(var(--sidebar-foreground)/.45)]" onClick={() => void signOut({ redirectUrl: basePath || '/' })} data-testid="button-sign-out"><LogOut size={15} /></button></div>
       </div>
     </aside>
     {mobileOpen ? <button aria-label="Close navigation" onClick={() => setMobileOpen(false)} className="fixed inset-0 z-30 bg-[hsl(var(--primary)/.4)] md:hidden" data-testid="button-overlay" /> : null}
@@ -199,16 +215,74 @@ function Reports() {
 function ReportLine({ icon: Icon, label, value, color }: { icon: typeof Hotel; label: string; value: number; color: string }) { return <div className="flex items-center gap-3"><div className={`grid h-9 w-9 place-items-center rounded-lg ${color} text-[hsl(var(--primary))]`}><Icon size={16} /></div><p className="flex-1 text-sm font-semibold">{label}</p><p className="font-display text-xl">{value}</p></div>; }
 
 function Settings() {
-  return <><PageIntro eyebrow="Workspace controls" title="Settings" detail="The system context your operations desk relies on. Configuration is intentionally quiet until the backend policy layer is joined." /><div className="grid gap-6 lg:grid-cols-[1fr_360px]"><Card className="p-5 sm:p-7"><div className="mb-6 flex items-center gap-3"><div className="grid h-10 w-10 place-items-center rounded-xl bg-[hsl(var(--secondary)/.25)] text-[#806015]"><Settings2 size={18} /></div><div><p className="font-display text-lg font-semibold">Staff preferences</p><p className="text-xs text-[hsl(var(--muted-foreground))]">Your working context on this desk</p></div></div><div className="divide-y divide-[hsl(var(--border))]"><SettingRow icon={Bell} title="Activity notifications" detail="Keep the next important member action visible." /><SettingRow icon={ShieldCheck} title="Immutable audit mode" detail="Every payment and redemption is recorded without overwrite." enabled /><SettingRow icon={Clock3} title="Local time display" detail="Asia/Kolkata · UTC +05:30" /></div></Card><Card className="overflow-hidden"><div className="bg-[hsl(var(--primary))] p-6 text-[hsl(var(--primary-foreground))]"><p className="font-mono-ui text-[10px] uppercase tracking-[.18em] text-[hsl(var(--secondary))]">Account context</p><div className="mt-5 flex items-center gap-3"><div className="grid h-12 w-12 place-items-center rounded-full bg-[hsl(var(--secondary))] font-bold text-[hsl(var(--primary))]">AS</div><div><p className="font-display text-xl">Aarav Shah</p><p className="text-xs text-[hsl(var(--primary-foreground)/.6)]">Operations desk</p></div></div></div><div className="space-y-4 p-6"><Info label="Workspace" value="Club Exotica / India" /><Info label="Access level" value="Staff administrator" /><Info label="Last sign in" value="Today, 08:42 IST" /><p className="pt-2 text-xs leading-5 text-[hsl(var(--muted-foreground))]">Need a role or policy change? Contact the workspace owner. This screen does not alter access.</p></div></Card></div></>;
+  const staff = useStaffProfile();
+  return <><PageIntro eyebrow="Workspace controls" title="Settings" detail="Manage the working context and access policy for the Club Exotica staff desk." /><div className="grid gap-6 lg:grid-cols-[1fr_360px]"><Card className="p-5 sm:p-7"><div className="mb-6 flex items-center gap-3"><div className="grid h-10 w-10 place-items-center rounded-xl bg-[hsl(var(--secondary)/.25)] text-[#806015]"><Settings2 size={18} /></div><div><p className="font-display text-lg font-semibold">Staff preferences</p><p className="text-xs text-[hsl(var(--muted-foreground))]">Your working context on this desk</p></div></div><div className="divide-y divide-[hsl(var(--border))]"><SettingRow icon={Bell} title="Activity notifications" detail="Keep the next important member action visible." /><SettingRow icon={ShieldCheck} title="Immutable audit mode" detail="Every payment and redemption is recorded without overwrite." enabled /><SettingRow icon={Clock3} title="Local time display" detail="Asia/Kolkata · UTC +05:30" /></div></Card><Card className="overflow-hidden"><div className="bg-[hsl(var(--primary))] p-6 text-[hsl(var(--primary-foreground))]"><p className="font-mono-ui text-[10px] uppercase tracking-[.18em] text-[hsl(var(--secondary))]">Account context</p><div className="mt-5 flex items-center gap-3"><div className="grid h-12 w-12 place-items-center rounded-full bg-[hsl(var(--secondary))] font-bold text-[hsl(var(--primary))]">{initials(`${staff.data?.firstName} ${staff.data?.lastName}`)}</div><div><p className="font-display text-xl">{staff.data?.firstName || staff.data?.email || 'Staff user'}</p><p className="text-xs text-[hsl(var(--primary-foreground)/.6)]">{staff.data?.role === 'SUPER_ADMIN' ? 'Super admin' : 'Staff user'}</p></div></div></div><div className="space-y-4 p-6"><Info label="Workspace" value="Club Exotica / India" /><Info label="Access level" value={staff.data?.role === 'SUPER_ADMIN' ? 'Super administrator' : 'Staff user'} /><Info label="Login ID" value={staff.data?.email || '—'} />{staff.data?.role === 'SUPER_ADMIN' ? <Link href="/settings/users" className="inline-flex rounded-lg bg-[hsl(var(--primary))] px-4 py-2.5 text-sm font-semibold text-[hsl(var(--primary-foreground))]">Manage staff users</Link> : <p className="pt-2 text-xs leading-5 text-[hsl(var(--muted-foreground))]">Only a super admin can add staff users or change login credentials.</p>}</div></Card></div></>;
+}
+
+function useStaffProfile() {
+  const [state, setState] = useState<{ data: StaffProfile | null; error: string | null }>({ data: null, error: null });
+  useEffect(() => {
+    let active = true;
+    apiJson<StaffProfile>('/staff/me').then((data) => { if (active) setState({ data, error: null }); }).catch((error: Error) => { if (active) setState({ data: null, error: error.message }); });
+    return () => { active = false; };
+  }, []);
+  return state;
+}
+
+function UserManagement() {
+  const staff = useStaffProfile();
+  const [users, setUsers] = useState<StaffProfile[]>([]);
+  const [form, setForm] = useState<StaffForm>({ email: '', password: '', firstName: '', lastName: '', role: 'USER' });
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [message, setMessage] = useState('');
+  const load = () => apiJson<StaffProfile[]>('/staff/users').then(setUsers).catch((error: Error) => setMessage(error.message));
+  useEffect(() => { if (staff.data?.role === 'SUPER_ADMIN') void load(); }, [staff.data?.role]);
+  const update = (key: keyof StaffForm) => (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setForm((value) => ({ ...value, [key]: event.target.value }));
+  const save = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setMessage('');
+    try {
+      const path = editingId ? `/staff/users/${editingId}` : '/staff/users';
+      await apiJson<StaffProfile>(path, { method: editingId ? 'PATCH' : 'POST', body: JSON.stringify({ ...form, password: form.password || undefined }) });
+      setForm({ email: '', password: '', firstName: '', lastName: '', role: 'USER' });
+      setEditingId(null);
+      setMessage(editingId ? 'Staff account updated.' : 'Staff account created. Save the temporary password securely; it is not shown again.');
+      await load();
+    } catch (error) { setMessage((error as Error).message); }
+  };
+  const edit = (user: StaffProfile) => { setEditingId(user.id); setForm({ email: user.email, password: '', firstName: user.firstName, lastName: user.lastName, role: user.role }); };
+  const remove = async (user: StaffProfile) => { if (!window.confirm(`Remove ${user.email}?`)) return; try { await apiJson(`/staff/users/${user.id}`, { method: 'DELETE' }); setMessage('Staff account removed.'); await load(); } catch (error) { setMessage((error as Error).message); } };
+  if (staff.data?.role !== 'SUPER_ADMIN') return <Card className="p-8"><EmptyState title="Super admin access required" detail="Only the super admin can manage staff login accounts." icon={ShieldCheck} /></Card>;
+  return <><PageIntro eyebrow="Access control" title="Staff users" detail="Create email/password accounts, change login credentials, assign roles, or remove staff access." /><div className="grid gap-6 xl:grid-cols-[380px_1fr]"><Card className="p-5 sm:p-6"><div className="mb-5"><p className="font-display text-lg font-semibold">{editingId ? 'Edit staff account' : 'Add staff user'}</p><p className="mt-1 text-xs text-[hsl(var(--muted-foreground))]">Google and other social login methods are not used by this console.</p></div><form onSubmit={save} className="grid gap-4"><Field label="Login email *" type="email" required value={form.email} onChange={update('email')} placeholder="staff@clubexotica.in" /><Field label={editingId ? 'New password (optional)' : 'Temporary password *'} type="password" required={!editingId} minLength={8} value={form.password} onChange={update('password')} placeholder="At least 8 characters" /><div className="grid grid-cols-2 gap-3"><Field label="First name" value={form.firstName} onChange={update('firstName')} /><Field label="Last name" value={form.lastName} onChange={update('lastName')} /></div><SelectField label="Role" value={form.role} onChange={update('role')}><option value="USER">Normal user</option><option value="SUPER_ADMIN">Super admin</option></SelectField><div className="flex gap-2"><Button type="submit" className="flex-1">{editingId ? 'Save account' : 'Create account'}</Button>{editingId ? <Button type="button" variant="soft" onClick={() => { setEditingId(null); setForm({ email: '', password: '', firstName: '', lastName: '', role: 'USER' }); }}>Cancel</Button> : null}</div>{message ? <p className="text-xs leading-5 text-[hsl(var(--muted-foreground))]">{message}</p> : null}</form></Card><Card className="overflow-hidden"><div className="border-b border-[hsl(var(--border))] px-5 py-4"><p className="font-display text-lg font-semibold">Current staff accounts</p><p className="mt-1 text-xs text-[hsl(var(--muted-foreground))]">{users.length} account{users.length === 1 ? '' : 's'} · password values are never displayed</p></div>{users.length ? <div className="divide-y divide-[hsl(var(--border))]">{users.map((user) => <div key={user.id} className="flex flex-wrap items-center gap-3 px-5 py-4"><div className="grid h-9 w-9 place-items-center rounded-full bg-[hsl(var(--secondary)/.3)] text-xs font-bold text-[#765610]">{initials(`${user.firstName} ${user.lastName}`)}</div><div className="min-w-0 flex-1"><p className="truncate text-sm font-bold">{user.firstName || user.lastName ? `${user.firstName} ${user.lastName}` : user.email}</p><p className="truncate text-[11px] text-[hsl(var(--muted-foreground))]">{user.email}</p></div><Badge tone={user.role === 'SUPER_ADMIN' ? 'coral' : 'green'}>{user.role === 'SUPER_ADMIN' ? 'Super admin' : 'Normal user'}</Badge><Button variant="soft" onClick={() => edit(user)}>Edit</Button><Button variant="danger" onClick={() => void remove(user)}>Remove</Button></div>)}</div> : <div className="p-5"><EmptyState title="No staff accounts found" detail="Create the first staff account from the form." icon={Users} /></div>}</Card></div></>;
 }
 function SettingRow({ icon: Icon, title, detail, enabled = false }: { icon: typeof Bell; title: string; detail: string; enabled?: boolean }) { const [on, setOn] = useState(enabled); return <div className="flex items-center gap-4 py-4"><div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-[hsl(var(--muted))] text-[hsl(var(--muted-foreground))]"><Icon size={16} /></div><div className="flex-1"><p className="text-sm font-bold">{title}</p><p className="mt-1 text-xs text-[hsl(var(--muted-foreground))]">{detail}</p></div><button onClick={() => setOn(!on)} className={`relative h-6 w-11 rounded-full ${on ? 'bg-[hsl(var(--secondary))]' : 'bg-[hsl(var(--muted))]'}`} data-testid={`button-toggle-${title.toLowerCase().replaceAll(' ', '-')}`}><span className={`absolute top-1 h-4 w-4 rounded-full bg-[hsl(var(--card))] shadow-sm ${on ? 'left-6' : 'left-1'}`} /></button></div>; }
 
 function SignInPage() {
-  return <div className="flex min-h-[100dvh] items-center justify-center bg-[hsl(var(--background))] px-4"><SignIn routing="path" path={`${basePath}/sign-in`} signUpUrl={`${basePath}/sign-up`} /></div>;
-}
-
-function SignUpPage() {
-  return <div className="flex min-h-[100dvh] items-center justify-center bg-[hsl(var(--background))] px-4"><SignUp routing="path" path={`${basePath}/sign-up`} signInUrl={`${basePath}/sign-in`} /></div>;
+  const { isLoaded, signIn } = useSignIn();
+  const { setActive } = useClerk();
+  const [form, setForm] = useState({ email: '', password: '' });
+  const [error, setError] = useState('');
+  const [pending, setPending] = useState(false);
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!isLoaded) return;
+    setPending(true);
+    setError('');
+    try {
+      await signIn.create({ identifier: form.email, password: form.password });
+      if (signIn.status === 'complete') {
+        await setActive({ session: signIn.createdSessionId });
+      } else {
+        setError('This account requires an additional verification step. Contact the super admin.');
+      }
+    } catch (cause) {
+      const clerkError = cause as { errors?: Array<{ longMessage?: string; message?: string }> };
+      setError(clerkError.errors?.[0]?.longMessage || clerkError.errors?.[0]?.message || 'Invalid login email or password.');
+    } finally {
+      setPending(false);
+    }
+  };
+  return <div className="flex min-h-[100dvh] items-center justify-center bg-[hsl(var(--background))] px-4"><div className="w-full max-w-md rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-7 shadow-xl"><div className="mb-7 text-center"><div className="mx-auto grid h-12 w-12 place-items-center rounded-xl bg-[hsl(var(--secondary))] text-[hsl(var(--primary))]"><Sparkles size={21} /></div><p className="mt-4 font-mono-ui text-[10px] uppercase tracking-[.2em] text-[hsl(var(--accent))]">Club Exotica</p><h1 className="mt-2 font-display text-2xl font-semibold">Staff sign in</h1><p className="mt-2 text-xs text-[hsl(var(--muted-foreground))]">Use the email and password provided by your super admin.</p></div><form onSubmit={submit} className="grid gap-4"><Field label="Login email" type="email" autoComplete="username" required value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} placeholder="staff@clubexotica.in" /><Field label="Password" type="password" autoComplete="current-password" required value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} placeholder="Your password" /><Button type="submit" disabled={pending || !isLoaded} className="mt-2 w-full">{pending ? 'Signing in...' : 'Sign in'}</Button>{error ? <p className="text-center text-xs text-[hsl(var(--destructive))]">{error}</p> : null}</form><p className="mt-5 border-t border-[hsl(var(--border))] pt-4 text-center text-[11px] text-[hsl(var(--muted-foreground))]">Account creation and credential changes are controlled by the super admin.</p></div></div>;
 }
 
 function LandingPage() {
@@ -217,13 +291,14 @@ function LandingPage() {
 
 function ProtectedApp() {
   const { isLoaded, isSignedIn } = useAuth();
+  const staff = useStaffProfile();
   if (!isLoaded) return <div className="grid min-h-[100dvh] place-items-center bg-[hsl(var(--background))] text-sm text-[hsl(var(--muted-foreground))]">Loading staff console...</div>;
   if (!isSignedIn) return <LandingPage />;
-  return <Shell><ErrorBoundary resetKey={useLocation()[0]}><Switch><Route path="/" component={Dashboard} /><Route path="/customers" component={Customers} /><Route path="/customers/new" component={CustomerForm} /><Route path="/customers/:customerId" component={CustomerProfile} /><Route path="/reports" component={Reports} /><Route path="/settings" component={Settings} /><Route component={NotFound} /></Switch></ErrorBoundary></Shell>;
+  return <Shell staff={staff.data}><ErrorBoundary resetKey={useLocation()[0]}><Switch><Route path="/" component={Dashboard} /><Route path="/customers" component={Customers} /><Route path="/customers/new" component={CustomerForm} /><Route path="/customers/:customerId" component={CustomerProfile} /><Route path="/reports" component={Reports} /><Route path="/settings/users" component={UserManagement} /><Route path="/settings" component={Settings} /><Route component={NotFound} /></Switch></ErrorBoundary></Shell>;
 }
 
-function Router() { return <Switch><Route path="/sign-in/*?" component={SignInPage} /><Route path="/sign-up/*?" component={SignUpPage} /><Route component={ProtectedApp} /></Switch>; }
+function Router() { return <Switch><Route path="/sign-in/*?" component={SignInPage} /><Route path="/sign-up/*?" component={SignInPage} /><Route component={ProtectedApp} /></Switch>; }
 function App() {
-  return <WouterRouter base={basePath}><ClerkProvider publishableKey={clerkPubKey} proxyUrl={clerkProxyUrl} appearance={{ theme: shadcn, variables: { colorPrimary: '#b28a3b', colorForeground: '#23313a', colorBackground: '#fbf8f0', colorInput: '#fffdf7', colorInputForeground: '#23313a', colorMutedForeground: '#6f7a78', fontFamily: 'Manrope, sans-serif', borderRadius: '0.65rem' }, options: { logoImageUrl: `${window.location.origin}${basePath}/logo.svg`, logoLinkUrl: basePath || '/', logoPlacement: 'inside' } }} signInUrl={`${basePath}/sign-in`} signUpUrl={`${basePath}/sign-up`}><QueryClientProvider client={queryClient}><TooltipProvider><Router /><Toaster /></TooltipProvider></QueryClientProvider></ClerkProvider></WouterRouter>;
+  return <WouterRouter base={basePath}><ClerkProvider publishableKey={clerkPubKey} proxyUrl={clerkProxyUrl} appearance={{ theme: shadcn, variables: { colorPrimary: '#b28a3b', colorForeground: '#23313a', colorBackground: '#fbf8f0', colorInput: '#fffdf7', colorInputForeground: '#23313a', colorMutedForeground: '#6f7a78', fontFamily: 'Manrope, sans-serif', borderRadius: '0.65rem' }, options: { logoImageUrl: `${window.location.origin}${basePath}/logo.svg`, logoLinkUrl: basePath || '/', logoPlacement: 'inside' } }} signInUrl={`${basePath}/sign-in`} signUpUrl={`${basePath}/sign-in`}><QueryClientProvider client={queryClient}><TooltipProvider><Router /><Toaster /></TooltipProvider></QueryClientProvider></ClerkProvider></WouterRouter>;
 }
 export default App;
