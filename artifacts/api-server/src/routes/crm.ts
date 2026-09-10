@@ -54,6 +54,13 @@ function serializeStaffUser(user: StaffUser) {
   };
 }
 
+function staffRequestError(error: unknown, fallback: string) {
+  const clerkError = error as { errors?: Array<{ code?: string; longMessage?: string; message?: string }> };
+  const first = clerkError.errors?.[0];
+  if (first?.code === "form_identifier_exists") return "That email address is already in use.";
+  return first?.longMessage ?? first?.message ?? fallback;
+}
+
 async function currentStaffUser(req: Parameters<NonNullable<Parameters<typeof router.use>[1]>>[0]) {
   const auth = getAuth(req);
   return auth.userId ? clerkClient.users.getUser(auth.userId) : null;
@@ -107,8 +114,8 @@ router.post("/staff/users", requireSuperAdmin, async (req, res) => {
       lastName?: string;
       role?: StaffRole;
     };
-    if (!email || !password || password.length < 8 || !["SUPER_ADMIN", "USER"].includes(role)) {
-      res.status(400).json({ error: "Email, password of at least 8 characters, and a valid role are required." });
+    if (!email || !password || password.length < 15 || !["SUPER_ADMIN", "USER"].includes(role)) {
+      res.status(400).json({ error: "Email, password of at least 15 characters, and a valid role are required." });
       return;
     }
     const user = await clerkClient.users.createUser({
@@ -122,7 +129,7 @@ router.post("/staff/users", requireSuperAdmin, async (req, res) => {
     res.status(201).json(serializeStaffUser(user));
   } catch (error) {
     req.log.error({ error }, "Failed to create staff user");
-    res.status(400).json({ error: "Unable to create staff user. The email may already be in use." });
+    res.status(400).json({ error: staffRequestError(error, "Unable to create staff user.") });
   }
 });
 
@@ -140,6 +147,18 @@ router.patch("/staff/users/:userId", requireSuperAdmin, async (req, res) => {
       lastName?: string;
       role?: StaffRole;
     };
+    if (email !== undefined && !email.trim()) {
+      res.status(400).json({ error: "Login email cannot be empty." });
+      return;
+    }
+    if (password !== undefined && password !== "" && password.length < 15) {
+      res.status(400).json({ error: "New passwords must be at least 15 characters." });
+      return;
+    }
+    if (role !== undefined && !["SUPER_ADMIN", "USER"].includes(role)) {
+      res.status(400).json({ error: "A valid staff role is required." });
+      return;
+    }
     const userId = String(req.params.userId);
     const existing = await clerkClient.users.getUser(userId);
     const update: Parameters<typeof clerkClient.users.updateUser>[1] = {
@@ -163,7 +182,7 @@ router.patch("/staff/users/:userId", requireSuperAdmin, async (req, res) => {
     res.json(serializeStaffUser(user));
   } catch (error) {
     req.log.error({ error }, "Failed to update staff user");
-    res.status(400).json({ error: "Unable to update staff user." });
+    res.status(400).json({ error: staffRequestError(error, "Unable to update staff user.") });
   }
 });
 
